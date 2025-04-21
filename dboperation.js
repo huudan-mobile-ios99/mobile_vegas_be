@@ -305,7 +305,10 @@ async function getJackPotHistory(startDate, endDate) {
             // return map;
             data = jackpot.recordset.map(record => {
                 if (record.JackpotID === 44) {
-                    return { ...record, JackpotID: 46 }; //every item have jpID = 44 change to 46
+                    return { ...record, JackpotID: 46 ,Name: "Monthly" }; //every item have jpID = 44 change to 46
+                }
+                if (record.Name === "ZMonthly") {
+                    updatedRecord.Name = "Monthly";
                 }
                 return record;
             });
@@ -337,8 +340,6 @@ async function getJackPotHistory(startDate, endDate) {
     }
 }
 async function getJackPotHistoryID(startDate, endDate, id) {
-    // Map input id: 44 or 46 becomes 46, others remain unchanged
-    const queryId = (id === "44" || id === "46") ? "46" : id;
     const query = `SELECT [JackpotOccurrenceID]
     ,dbo.jackpot.JackpotID
     ,dbo.Jackpot.Name
@@ -357,10 +358,14 @@ async function getJackPotHistoryID(startDate, endDate, id) {
     Join dbo.MachineGameTheme
     on dbo.machine.MachineGameThemeID=dbo.MachineGameTheme.MachineGameThemeID
     Where HitGamingDate between @input_startDate
-    and @input_endDate AND dbo.jackpot.JackpotID > 0 AND dbo.Jackpot.JackpotID = @input_id ORDER BY dbo.JackpotOccurrence.HitDateTime DESC`;
+    and @input_endDate AND dbo.jackpot.JackpotID > 0
+    AND dbo.Jackpot.JackpotID = @input_id
+    ORDER BY dbo.JackpotOccurrence.HitDateTime DESC`;
+
     let status = false;
     let message = "can not get jackpot history";
     let data = null;
+
     try {
         let pool = await sql.connect(config);
         let jackpot = await pool.request()
@@ -369,29 +374,36 @@ async function getJackPotHistoryID(startDate, endDate, id) {
             .input('input_id', sql.NVarChar, id)
             .query(query);
 
+        // If no data and id is 44 or 46, try the alternative JackpotID
+        if (jackpot.recordset.length === 0 && (id === "44" || id === "46")) {
+            const fallbackId = id === "44" ? "46" : "44";
+            jackpot = await pool.request()
+                .input('input_startDate', sql.NVarChar, startDate)
+                .input('input_endDate', sql.NVarChar, endDate)
+                .input('input_id', sql.NVarChar, fallbackId)
+                .query(query);
+        }
+
         if (jackpot.recordset.length > 0) {
             data = jackpot.recordset.map(record => {
                 if (record.JackpotID === 44) {
-                    return { ...record, JackpotID: 46 };
+                    return { ...record, JackpotID: 46, Name: "Monthly" };
+                }
+                if (record.JackpotID === 46) {
+                    return { ...record, Name: "Monthly" };
                 }
                 return record;
             });
             status = true;
             message = `get jackpot history by id success, ${jackpot.recordset.length} results`;
-            let map = {
-                "status": status,
-                "message": message,
-                "data": data,
-            };
-            return map;
-        } else {
-            let map = {
-                "status": false,
-                "message": message,
-                "data": data,
-            };
-            return map;
         }
+
+        let map = {
+            "status": status,
+            "message": message,
+            "data": data,
+        };
+        return map;
     } catch (error) {
         console.log(`An error occurred in getJackPotHistoryID: ${error}`);
         let map = {
